@@ -80,8 +80,8 @@
     </div>
     <div class="row" style="margin-top:10px;">
       <div><label>汇报时长（分钟）</label><input type="number" id="durationInput" value="15" min="3" max="60"></div>
-      <div><label>汇报场景</label>
-        <select id="sceneSelect"><option value="defense" selected>学术答辩（MVP）</option></select>
+      <div><label>技能包</label>
+        <select id="sceneSelect"><option value="defense" selected>学术答辩</option><option value="labMeeting">组会文献汇报（新）</option></select>
       </div>
     </div>
     <div style="margin-top:12px;"><button class="btn block" id="startBtn">🚀 开始生成</button></div>
@@ -176,6 +176,29 @@ async function callAI(messages){
   return content;
 }
 
+/* ================= 技能包定义 ================= */
+const SKILLS = {
+  defense: {
+    name:'学术答辩',
+    structure:'按"结论先行 + 金字塔结构"组织，总页数控制在 6-8 页，避免页与页内容重复。',
+    audience:'听众是答辩评委（导师/专家），最看重：研究严谨性、方法、数据、创新点。汇报目标：证明研究严谨、可信、有价值。',
+    outputTemplate:'输出格式（每页三层）：\n【答辩 PPT 框架 · 共 N 页 · 总时长 {dur} 分钟】\n1. 【页面标题】这一页的具体标题，例如"基于30样地90样树的叶生物量模型构建"｜建议时长 Xs｜\n   【PPT 内容】（放在页面上的全部文字，2-4 条带具体信息的文字点）\n   - 信息点1\n   - 信息点2\n   【演讲内容】（演讲者口头说的，2-3 段完整、口语化、较详细的句子）\n   - 演讲句1\n   - 演讲句2\n2. ...（继续到最后一页）',
+    requirement:'页面标题必须写具体、有信息量，禁止保留"小标题"三个字；PPT 内容是页面实际展示的文字点，要有具体数据/结论；演讲内容口语化、像在跟评委讲话，不要用"本研究聚焦于"这类论文腔；每页标注建议时长（秒）；所有页时长相加 = {dur} 分钟。',
+    reviewExtra:'页面标题是否写具体（禁止"小标题"占位符）；PPT 内容是否 2-4 条带具体信息；演讲内容是否口语化'
+  },
+  labMeeting: {
+    name:'组会文献汇报',
+    structure:'按组会文献汇报 8 页标准结构组织：1 开场与选文理由 → 2 研究背景 → 3 研究问题与方法 → 4 主要结果 → 5 结论与讨论 → 6 批判性评价 → 7 对自己的启发 → 8 收尾与讨论引导。',
+    audience:'听众是导师和同门。导师最关心三件事：你读懂了没有、这篇文献对你研究有没有启发、方法能不能借鉴；同门关心领域动态和可讨论点。汇报目标：证明你读懂了、有思考、和组内研究有连接。',
+    outputTemplate:'输出格式（每页 5 件套，直接可用）：\n【组会文献汇报框架 · 共 N 页 · 总时长 {dur} 分钟】\n1. 【页面标题】这一页的具体标题｜建议时长 Xs｜\n   【PPT 内容】（页面上的文字，2-4 条带具体信息）\n   - 信息点1\n   - 信息点2\n   【演讲内容】（口语要点，2-3 条）\n   - 要点1\n   - 要点2\n   【逐字稿】（完整一段话，可直接照着念，口语自然，像在组会上说话）\n   - "各位老师、各位同门，我今天汇报的文献是……"\n   【可能被问的问题】\n   - 问题：…… 应对：……\n2. ...（继续到最后一页）',
+    requirement:'每页必须完整输出 5 件套；页面标题写具体；PPT 内容带具体信息；逐字稿必须是一段完整、口语、能直接照着念的话（不是要点）；"可能被问的问题"给 1-2 个并附应对思路；每页标注建议时长（秒）；所有页时长相加 = {dur} 分钟。',
+    knowledge:'组会规范：时长 20-30 分钟，要脱稿讲，避免照念论文、只复述不评价。批判性阅读框架：从 4 个维度评价一篇文献——①贡献（新在哪）②方法（严谨吗/可复制吗）③证据（结果支撑结论吗）④局限（边界在哪）。常见提问应对：导师可能问"这篇和你的研究有什么关系""这个方法能用吗""你觉得最大问题是什么"，分别对应启发页、方法可复制性评价、批判性评价。',
+    speechLib:'话术风格：开场用"各位老师、各位同门，我今天汇报的文献是……，选这篇是因为……"；评价贡献用"这篇的贡献在于……"；评价局限用"我觉得它的局限有两点……"；启发用"对我自己研究的一个启发是……"；收尾用"以上就是我的汇报，有一个点想听听大家意见……"。',
+    reviewExtra:'技能包专属检查：①是否缺"批判性评价"页 ②是否缺"对自己的启发"页 ③评价页是否真的在评价（贡献/局限/可复制），而不是复述 ④收尾是否抛出可讨论的问题 ⑤逐字稿是否口语化能直接念 ⑥是否包含"可能被问的问题+应对"；并检查页面标题是否写具体、PPT 内容是否带具体信息'
+  }
+};
+function getSkill(id){ return SKILLS[id] || SKILLS.defense; }
+
 /* ================= 4 个 Agent 角色 Prompt ================= */
 function promptExtract(paper){
   return '你是论文萃取专家，擅长从学术论文中提炼核心信息。\n'+
@@ -187,40 +210,43 @@ function promptExtract(paper){
     '创新点若原文未明确写出，必须写"论文未明确提及创新点"，禁止自己补。\n'+
     '输出：用 Markdown 分点输出 6 项。\n\n【论文内容】\n' + paper;
 }
-function promptRebuild(extraction, duration){
-  return '你是答辩汇报架构师，擅长把"写作逻辑"重构成"评委爱听的汇报逻辑"。\n'+
-    '听众建模：听众是答辩评委（导师/专家），最看重：研究严谨性、方法、数据、创新点。汇报目标：证明研究严谨、可信、有价值。\n'+
-    '任务：基于萃取结果，生成 '+duration+' 分钟的答辩 PPT 框架，按"结论先行 + 金字塔结构"组织，总页数控制在 6-8 页，避免页与页内容重复。\n'+
-    '输出格式（每页分三层：页面标题 + PPT内容 + 演讲内容）：\n'+
-    '【答辩 PPT 框架 · 共 N 页 · 总时长 '+duration+' 分钟】\n'+
-    '1. 【页面标题】这一页的具体标题，例如"基于30样地90样树的叶生物量模型构建"｜建议时长 Xs｜\n'+
-    '   【PPT 内容】（放在 PPT 页面上的全部文字，2-4 条信息点，比标题详细，是观众在页面上读到的具体内容）\n   - 信息点1\n   - 信息点2\n'+
-    '   【演讲内容】（演讲者口头说的，2-3 段，每段 1-2 句完整、口语化、较详细的句子，要能把故事讲清楚）\n   - 演讲句1\n   - 演讲句2\n'+
-    '2. ...（继续到最后一页）\n'+
-    '【要求】页面标题必须写具体、有信息量，禁止保留"小标题"三个字；PPT 内容是页面上实际展示的文字信息点，要有具体数据/结论；演讲内容要口语化、像在跟评委讲话，不要用"本研究聚焦于"这类论文摘要腔；每页标注建议时长（秒）；所有页时长相加 = '+duration+' 分钟。\n'+
-    '规则：只使用萃取结果里的内容，禁止编造数据；结论先行；金字塔结构，每页只讲一个核心点。\n'+
+function promptRebuild(extraction, duration, skillId){
+  const s = getSkill(skillId);
+  const dur = duration + ' 分钟';
+  return '你是汇报架构师，擅长把"写作逻辑"重构成"听众爱听的汇报逻辑"。\n'+
+    '听众建模：' + s.audience + '\n'+
+    '任务：基于萃取结果，生成 '+dur+' 的汇报 PPT 框架，' + s.structure + '\n'+
+    s.outputTemplate.replace('{dur}', duration) + '\n'+
+    (s.knowledge ? '【专属知识】' + s.knowledge + '\n' : '') +
+    (s.speechLib ? '【话术风格】' + s.speechLib + '\n' : '') +
+    '【要求】' + s.requirement.replace('{dur}', duration) + '\n'+
+    '规则：只使用萃取结果里的内容，禁止编造数据；每页只讲一个核心点。\n'+
     '规则补充：严禁声称"首次/首创"除非萃取结果明确写出；不确定内容保留"初步/可能"限定词。\n'+
-    '【禁编造】只能使用萃取结果中明确出现的信息，严禁添加萃取结果中不存在的年份、数字、结论（例如林龄关键节点、酶活性等与本研究无关的内容）；萃取结果没有的内容一律不要写。\n'+
-    '结尾总结页必须基于萃取结果写本研究的具体贡献，禁止"证明了严谨性和创新性"这类空话。\n\n【萃取结果】\n' + extraction;
+    '【禁编造】只能使用萃取结果中明确出现的信息，严禁添加萃取结果中不存在的年份、数字、结论；萃取结果没有的内容一律不要写。\n'+
+    '结尾页必须基于萃取结果写具体贡献，禁止"证明了严谨性和创新性"这类空话。\n\n【萃取结果】\n' + extraction;
 }
-function promptReview(draft, duration){
-  return '你是严格的答辩评审专家，负责检查 PPT 框架的质量。\n'+
-    '任务：按以下 6 项检查大纲，逐项判断：\n'+
+function promptReview(draft, duration, skillId){
+  const s = getSkill(skillId);
+  const dur = duration + ' 分钟';
+  return '你是严格的汇报评审专家，负责检查框架的质量。\n'+
+    '任务：按以下检查项判断：\n'+
     '1. 是否缺"研究背景"\n2. 是否缺"方法/数据"\n3. 是否缺"结论/创新点"\n'+
-    '4. 检查三项：页面标题是否写具体（禁止"小标题"占位符）；PPT 内容是否 2-4 条带具体信息的文字点；演讲内容是否口语化（出现"本研究聚焦于"这类论文腔要指出）\n'+
-    '5. 逐页相加核对总时长：算出实际总秒数，判断是否超过设定值 '+duration+' 分钟（'+(parseInt(duration)*60)+'秒），输出实际总和\n'+
-    '6. 逻辑是否有断层\n7. 是否编造或夸大原文没有的内容（例如声称"首次/首创"，把"好像/大概"写成确定数据，或添加萃取结果中没有的年份/结论如"40年关键节点、酶活性"）\n'+
+    '4. ' + s.reviewExtra + '\n'+
+    '5. 逐页相加核对总时长：算出实际总秒数，判断是否超过设定值 '+dur+'（'+(parseInt(duration)*60)+'秒），输出实际总和\n'+
+    '6. 逻辑是否有断层\n7. 是否编造或夸大原文没有的内容（声称"首次/首创"、把"好像/大概"写成确定数据、添加不存在的年份/结论）\n'+
     '输出格式（严格 JSON，不要输出任何其他文字）：\n'+
-    '{"问题数": 0, "是否达标": true, "问题列表": [{"问题": "缺研究背景", "建议": "开场后补一页背景页"}]}\n'+
+    '{"问题数": 0, "是否达标": true, "问题列表": [{"问题": "…", "建议": "…"}]}\n'+
     '- 没有问题：问题数填 0，是否达标填 true\n- 有问题：问题数填实际数量，是否达标填 false，逐条列问题和建议\n\n'+
-    '【设定时长】'+duration+' 分钟\n【待评审大纲】\n' + draft;
+    '【设定时长】'+dur+'\n【待评审大纲】\n' + draft;
 }
-function promptRevise(draft, reviewJson, duration){
-  return '你是答辩汇报架构师，负责根据评审意见修改大纲，输出最终版。\n'+
-    '规则：解决所有被指出的问题；保持"结论先行 + 金字塔结构"；每页包含【页面标题】（具体标题）+【PPT 内容】（2-4 条信息点）+【演讲内容】（口语化详细句子）；总时长精确等于 '+duration+' 分钟；只输出最终大纲，不要解释修改过程。\n'+
-    '规则补充：严禁声称"首次/首创"除非原文明确写出；总结页必须写具体贡献，禁止空话套话。\n'+
-    '【禁编造】只能使用萃取结果中明确出现的信息，严禁添加不存在的年份/数字/结论。\n'+
-    '输出格式：和初稿相同（每页：具体标题 + 【PPT 内容】信息点 + 【演讲内容】口语化句子 + 建议时长）。\n\n'+
+function promptRevise(draft, reviewJson, duration, skillId){
+  const s = getSkill(skillId);
+  const dur = duration + ' 分钟';
+  const parts = (s.outputTemplate.indexOf('5 件套') >= 0) ? '页面标题 + PPT 内容 + 演讲内容 + 逐字稿 + 可能被问的问题' : '页面标题 + PPT 内容 + 演讲内容';
+  return '你是汇报架构师，负责根据评审意见修改框架，输出最终版。\n'+
+    '规则：解决所有被指出的问题；保持' + s.structure.split('。')[0] + '；每页按技能包模板完整输出（'+ parts +'）；总时长不超过 '+dur+'；只输出最终框架，不要解释修改过程。\n'+
+    '规则补充：严禁声称"首次/首创"除非原文明确写出；结尾页写具体贡献。\n'+
+    '【禁编造】只能使用萃取结果中明确出现的信息，严禁添加不存在的年份/数字/结论。\n\n'+
     '【初稿大纲】\n' + draft + '\n\n【评审意见】\n' + reviewJson;
 }
 
@@ -264,6 +290,7 @@ function setLastError(){
 async function runAgent(){
   const paper = document.getElementById('paperInput').value.trim();
   const duration = document.getElementById('durationInput').value || '15';
+  const skill = document.getElementById('sceneSelect').value;
   if(!paper){ showToast('请先粘贴论文/文稿内容'); return; }
   if(!settings.proxy){ showToast('请先在 ⚙️ 设置里配置 AI 代理地址'); document.getElementById('settingsModal').classList.add('show'); return; }
 
@@ -282,7 +309,7 @@ async function runAgent(){
 
     // ② 逻辑重构（初稿）
     addStep('② 逻辑重构 Agent：正在生成 ' + duration + ' 分钟答辩框架初稿…', 'running');
-    let draft = await callAI([{role:'user', content: promptRebuild(extraction, duration)}]);
+    let draft = await callAI([{role:'user', content: promptRebuild(extraction, duration, skill)}]);
     setLastDone();
 
     // ③④ 反思循环（最多3轮）
@@ -291,7 +318,7 @@ async function runAgent(){
       rounds = i;
       document.getElementById('roundBadge').textContent = '反思循环 ' + i + '/3';
       addStep('③ 评审 Agent：第 ' + i + ' 轮自检（逻辑断层/缺项/字数/时长）…', 'running');
-      const reviewRaw = await callAI([{role:'user', content: promptReview(draft, duration)}]);
+      const reviewRaw = await callAI([{role:'user', content: promptReview(draft, duration, skill)}]);
       const review = parseReview(reviewRaw);
       setLastDone();
       if(review.是否达标){
@@ -300,7 +327,7 @@ async function runAgent(){
       }
       const issueText = (review.问题列表 && review.问题列表.length) ? review.问题列表.map(x=>x.问题).join('；') : '存在问题';
       addStep('⚠️ 发现 ' + review.问题数 + ' 个问题（' + issueText + '），④ 重新生成…', 'warn');
-      draft = await callAI([{role:'user', content: promptRevise(draft, reviewRaw, duration)}]);
+      draft = await callAI([{role:'user', content: promptRevise(draft, reviewRaw, duration, skill)}]);
       setLastDone();
       if(i === 3){
         addStep('⏹ 已达最大循环轮数，交付当前版本', 'warn');

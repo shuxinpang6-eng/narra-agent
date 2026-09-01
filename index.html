@@ -73,6 +73,11 @@
     <h3>📄 输入你的内容 <span class="tag">MVP：学术答辩场景</span></h3>
     <label>论文 / 文稿内容（粘贴纯文本）</label>
     <textarea id="paperInput" rows="12" placeholder="把你的论文、报告或讲稿内容粘贴到这里…"></textarea>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <button class="btn ghost" id="uploadBtn" style="flex:0 0 auto;">📎 上传文件</button>
+      <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display:none">
+      <span class="muted" id="uploadMsg">支持 PDF / Word / TXT，自动解析填进输入框</span>
+    </div>
     <div class="row" style="margin-top:10px;">
       <div><label>汇报时长（分钟）</label><input type="number" id="durationInput" value="15" min="3" max="60"></div>
       <div><label>汇报场景</label>
@@ -136,6 +141,8 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script>
 /* ================= 设置与状态 ================= */
 const LS = { settings:'na_settings' };
@@ -333,6 +340,49 @@ document.getElementById('testProxyBtn').onclick = async function(){
   }
   btn.disabled = false; btn.textContent = '测试连接';
 };
+
+/* ================= 文件上传与解析（工具调用） ================= */
+document.getElementById('uploadBtn').onclick = function(){ document.getElementById('fileInput').click(); };
+document.getElementById('fileInput').onchange = async function(){
+  const file = this.files && this.files[0];
+  if(!file) return;
+  const msg = document.getElementById('uploadMsg');
+  msg.textContent = '⏳ 正在解析「' + file.name + '」…';
+  try{
+    let text = '';
+    const ext = (file.name.split('.').pop()||'').toLowerCase();
+    if(ext === 'txt'){ text = await file.text(); }
+    else if(ext === 'pdf'){ text = await parsePDF(file); }
+    else if(ext === 'docx'){ text = await parseDocx(file); }
+    else { msg.textContent = '⚠️ 目前只支持 PDF / Word(docx) / TXT 文件'; return; }
+    const trimmed = text.trim();
+    if(trimmed.length < 50){ msg.textContent = '⚠️ 解析出的内容太少，请确认是文字版文件（不是扫描图片）'; return; }
+    document.getElementById('paperInput').value = trimmed;
+    msg.textContent = '✅ 已解析约 ' + trimmed.length + ' 字并填入，可以开始生成了';
+  }catch(e){
+    msg.textContent = '❌ 解析失败：' + e.message + '（可改用粘贴文本）';
+  }
+  this.value = '';
+};
+async function parsePDF(file){
+  if(!window.pdfjsLib) throw new Error('PDF 解析库未加载（需联网）');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let text = '';
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(function(it){ return it.str; }).join(' ') + '\n';
+  }
+  return text;
+}
+async function parseDocx(file){
+  if(!window.mammoth) throw new Error('Word 解析库未加载（需联网）');
+  const buf = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({arrayBuffer: buf});
+  return result.value;
+}
 
 /* ================= 事件绑定 ================= */
 document.getElementById('startBtn').onclick = runAgent;

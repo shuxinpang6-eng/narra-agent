@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>汇报架构 Agent · 智能汇报逻辑设计</title>
+<style>
+  :root{
+    --bg:#f7f2e9; --card:#fffdf8; --primary:#b08968; --primary-dark:#8a5a44;
+    --text:#4a3728; --muted:#9c8873; --border:#e8dcc8; --ok:#6b9e6b; --warn:#c98a3d; --danger:#c0564f;
+    --radius:14px; --shadow:0 2px 10px rgba(138,90,68,.08);
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg); color:var(--text); min-height:100vh;}
+  header{position:sticky; top:0; z-index:20; background:rgba(247,242,233,.95); backdrop-filter:blur(8px);
+         border-bottom:1px solid var(--border); padding:12px 16px; display:flex; align-items:center; gap:10px;}
+  .logo{font-weight:800; font-size:18px; color:var(--primary-dark); flex:1; letter-spacing:.5px;}
+  .logo small{font-weight:400; font-size:11px; color:var(--muted); margin-left:6px;}
+  .icon-btn{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:6px 10px;
+            font-size:13px; color:var(--primary-dark); cursor:pointer;}
+  .icon-btn:hover{background:#f1e8da;}
+  main{max-width:760px; margin:0 auto; padding:14px 14px 60px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+        box-shadow:var(--shadow); padding:16px; margin-bottom:14px;}
+  .card h3{font-size:15px; margin-bottom:10px; color:var(--primary-dark);}
+  .card h3 .tag{font-size:11px; font-weight:400; color:var(--muted); margin-left:6px;}
+  .muted{color:var(--muted); font-size:12px;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input,select,textarea{width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:9px;
+        font-size:14px; background:#fff; color:var(--text); font-family:inherit;}
+  input:focus,select:focus,textarea:focus{outline:none; border-color:var(--primary);}
+  textarea{resize:vertical; line-height:1.6;}
+  .row{display:flex; gap:10px;} .row>*{flex:1;}
+  .btn{background:var(--primary); color:#fff; border:none; border-radius:10px; padding:11px 16px;
+       font-size:14px; cursor:pointer; font-weight:600;}
+  .btn:hover{background:var(--primary-dark);}
+  .btn.ghost{background:transparent; color:var(--primary-dark); border:1px solid var(--border);}
+  .btn.block{width:100%;}
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
+  /* 进度日志 */
+  .step{display:flex; align-items:flex-start; gap:8px; padding:7px 4px; border-bottom:1px dashed var(--border); font-size:13px; line-height:1.6;}
+  .step:last-child{border-bottom:none;}
+  .step .dot{flex:0 0 8px; width:8px; height:8px; border-radius:50%; margin-top:5px;}
+  .step.running .dot{background:var(--warn); animation:pulse 1s infinite;}
+  .step.done .dot{background:var(--ok);}
+  .step.error .dot{background:var(--danger);}
+  .step.warn .dot{background:var(--warn);}
+  @keyframes pulse{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
+  /* 输出 */
+  .kb-preview{font-size:13px; background:#fbf7f0; border-radius:10px; padding:12px; max-height:60vh;
+       overflow-y:auto; white-space:pre-wrap; color:var(--text); line-height:1.8;}
+  /* 弹窗 */
+  .modal-mask{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:40; align-items:flex-end; justify-content:center;}
+  .modal-mask.show{display:flex;}
+  .modal{background:var(--card); width:100%; max-width:720px; border-radius:18px 18px 0 0; padding:18px 16px 26px; max-height:85vh; overflow-y:auto;}
+  .modal h3{font-size:16px; margin-bottom:12px; color:var(--primary-dark);}
+  .modal .close{float:right; background:none; border:none; font-size:20px; color:var(--muted); cursor:pointer;}
+  .ok-text{font-size:12px; color:var(--ok); margin-top:8px;}
+  .warn-text{font-size:12px; color:var(--danger); margin-top:8px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📊 汇报架构 Agent<small>不做排版，只做汇报顶层逻辑</small></div>
+  <button class="icon-btn" id="manualBtn">📖 使用说明</button>
+  <button class="icon-btn" id="settingsBtn">⚙️ 设置</button>
+</header>
+
+<main>
+  <div class="card">
+    <h3>📄 输入你的内容 <span class="tag">MVP：学术答辩场景</span></h3>
+    <label>论文 / 文稿内容（粘贴纯文本）</label>
+    <textarea id="paperInput" rows="12" placeholder="把你的论文、报告或讲稿内容粘贴到这里…"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <div><label>汇报时长（分钟）</label><input type="number" id="durationInput" value="15" min="3" max="60"></div>
+      <div><label>汇报场景</label>
+        <select id="sceneSelect"><option value="defense" selected>学术答辩（MVP）</option></select>
+      </div>
+    </div>
+    <div style="margin-top:12px;"><button class="btn block" id="startBtn">🚀 开始生成</button></div>
+  </div>
+
+  <div class="card" id="progressCard" style="display:none">
+    <h3>🤖 Agent 工作过程 <span class="tag" id="roundBadge"></span></h3>
+    <div id="stepLog"></div>
+  </div>
+
+  <div class="card" id="outputCard" style="display:none">
+    <h3>📋 答辩 PPT 框架</h3>
+    <div id="outContent" class="kb-preview"></div>
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button class="btn ghost" id="copyBtn" style="flex:1">📋 复制</button>
+      <button class="btn ghost" id="regenerateBtn" style="flex:1">🔄 重新生成</button>
+    </div>
+  </div>
+</main>
+
+<!-- 设置弹窗 -->
+<div class="modal-mask" id="settingsModal">
+  <div class="modal">
+    <button class="close" data-close="settingsModal">✕</button>
+    <h3>⚙️ 设置</h3>
+    <label>AI 代理地址（Cloudflare Worker URL）</label>
+    <input id="s-proxy" placeholder="https://xxx.workers.dev">
+    <label>模型名（默认免费 glm-4-flash）</label>
+    <input id="s-model" placeholder="glm-4-flash">
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button class="btn" id="saveSettingsBtn" style="flex:1">保存</button>
+      <button class="btn ghost" id="testProxyBtn" style="flex:0 0 90px;">测试连接</button>
+    </div>
+    <div id="settingsMsg"></div>
+  </div>
+</div>
+
+<!-- 使用说明弹窗 -->
+<div class="modal-mask" id="manualModal">
+  <div class="modal">
+    <button class="close" data-close="manualModal">✕</button>
+    <h3>📖 使用说明</h3>
+    <div class="small" style="line-height:2; color:var(--text);">
+      <b>这是什么</b><br>
+      把你的论文/文稿，变成"评委爱听的答辩 PPT 框架"——不做排版，只做汇报逻辑。<br><br>
+      <b>怎么用</b><br>
+      1. 粘贴论文/文稿内容 → 2. 设定汇报时长 → 3. 点「开始生成」<br>
+      4. 看 Agent 工作过程（萃取→重构→评审→循环）→ 5. 复制最终框架<br><br>
+      <b>Agent 会做什么（4 个角色）</b><br>
+      ① 萃取：读懂论文，提炼核心观点/数据/结论<br>
+      ② 重构：按"结论先行 + 金字塔结构"生成初稿<br>
+      ③ 评审：自己检查缺背景/缺数据/字数超标/时长不符<br>
+      ④ 重生成：按评审意见修改，循环直到达标（最多 3 轮）<br><br>
+      <b>第一次使用</b><br>
+      点右上角 ⚙️ 设置 → 填 Cloudflare Worker 地址（和研途同一个 Worker 就行）→ 保存 → 测试连接
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= 设置与状态 ================= */
+const LS = { settings:'na_settings' };
+let settings = load(LS.settings, {proxy:'', model:'glm-4-flash'});
+function load(k, d){ try{ const v = JSON.parse(localStorage.getItem(k)); return v==null? d : v; }catch(e){ return d; } }
+function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function showToast(msg){
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:50%;bottom:60px;transform:translateX(-50%);background:rgba(74,55,40,.92);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;max-width:80%;text-align:center;';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2200);
+}
+function normalizeProxy(u){
+  u = (u||'').trim().replace(/\/+$/,'');
+  if(u && !/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u;
+}
+
+/* ================= 调用大模型（经 Worker 中转） ================= */
+async function callAI(messages){
+  const r = await fetch(settings.proxy, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({messages, model: settings.model||'glm-4-flash'})
+  });
+  if(!r.ok) throw new Error('代理返回错误 '+r.status);
+  const data = await r.json();
+  const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if(!content) throw new Error('未获取到回答');
+  return content;
+}
+
+/* ================= 4 个 Agent 角色 Prompt ================= */
+function promptExtract(paper){
+  return '你是论文萃取专家，擅长从学术论文中提炼核心信息。\n'+
+    '任务：阅读论文内容，提取以下 6 项信息：\n'+
+    '1. 研究背景（1-2 句）\n2. 核心研究问题（1 句）\n3. 研究方法（2-3 条）\n'+
+    '4. 关键数据（2-3 个，含数字）\n5. 主要结论（2-3 条）\n6. 创新点（1-2 条）\n'+
+    '规则：只使用论文中出现的内容，禁止编造；论文没写的内容写"论文未明确提及"。\n'+
+    '输出：用 Markdown 分点输出 6 项。\n\n【论文内容】\n' + paper;
+}
+function promptRebuild(extraction, duration){
+  return '你是答辩汇报架构师，擅长把"写作逻辑"重构成"评委爱听的汇报逻辑"。\n'+
+    '听众建模：听众是答辩评委（导师/专家），最看重：研究严谨性、方法、数据、创新点。汇报目标：证明研究严谨、可信、有价值。\n'+
+    '任务：基于萃取结果，生成 '+duration+' 分钟的答辩 PPT 框架，按"结论先行 + 金字塔结构"组织。\n'+
+    '输出格式：\n'+
+    '【答辩 PPT 框架 · 共 N 页 · 总时长 '+duration+' 分钟】\n'+
+    '1. 开场页（研究问题 + 价值）｜建议时长 Xs｜\n   - 演讲短句1\n   - 演讲短句2\n'+
+    '2. 背景与研究问题｜建议时长 Xs｜\n   - ...\n（继续到最后一页）\n'+
+    '【每页要求】小标题 + 2-3 句演讲短句（禁止大段文字）；每页标注建议时长（秒）；所有页时长相加 = '+duration+' 分钟。\n'+
+    '规则：只使用萃取结果里的内容，禁止编造数据；结论先行；金字塔结构，每页只讲一个核心点。\n\n【萃取结果】\n' + extraction;
+}
+function promptReview(draft, duration){
+  return '你是严格的答辩评审专家，负责检查 PPT 框架的质量。\n'+
+    '任务：按以下 6 项检查大纲，逐项判断：\n'+
+    '1. 是否缺"研究背景"\n2. 是否缺"方法/数据"\n3. 是否缺"结论/创新点"\n'+
+    '4. 每页是否文字过多（超过 3 句 = 超标）\n5. 总时长是否等于设定值 '+duration+' 分钟\n6. 逻辑是否有断层\n'+
+    '输出格式（严格 JSON，不要输出任何其他文字）：\n'+
+    '{"问题数": 0, "是否达标": true, "问题列表": [{"问题": "缺研究背景", "建议": "开场后补一页背景页"}]}\n'+
+    '- 没有问题：问题数填 0，是否达标填 true\n- 有问题：问题数填实际数量，是否达标填 false，逐条列问题和建议\n\n'+
+    '【设定时长】'+duration+' 分钟\n【待评审大纲】\n' + draft;
+}
+function promptRevise(draft, reviewJson, duration){
+  return '你是答辩汇报架构师，负责根据评审意见修改大纲，输出最终版。\n'+
+    '规则：解决所有被指出的问题；保持"结论先行 + 金字塔结构"；每页 2-3 句演讲短句；总时长精确等于 '+duration+' 分钟；只输出最终大纲，不要解释修改过程。\n'+
+    '输出格式：和初稿相同（每页：小标题 + 演讲短句 + 建议时长）。\n\n'+
+    '【初稿大纲】\n' + draft + '\n\n【评审意见】\n' + reviewJson;
+}
+
+/* ================= 解析评审 JSON ================= */
+function parseReview(raw){
+  // 去掉可能的 markdown 代码块标记，提取 JSON 对象
+  let s = String(raw).trim();
+  s = s.replace(/```json/gi,'').replace(/```/g,'');
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if(start >= 0 && end > start){
+    try{
+      const obj = JSON.parse(s.slice(start, end+1));
+      return { 问题数: Number(obj.问题数) || 0, 是否达标: obj.是否达标 === true, 问题列表: obj.问题列表 || [] };
+    }catch(e){}
+  }
+  // 兜底：找不到 JSON 就当成"有问题，需要再查一轮"
+  return { 问题数: 1, 是否达标: false, 问题列表: [{问题:'评审输出无法解析', 建议:'请重试'}] };
+}
+
+/* ================= Agent 编排（反思循环） ================= */
+const stepLogEl = () => document.getElementById('stepLog');
+function addStep(text, cls){
+  const d = document.createElement('div');
+  d.className = 'step ' + (cls||'');
+  d.innerHTML = '<span class="dot"></span><span>' + esc(text) + '</span>';
+  stepLogEl().appendChild(d);
+  stepLogEl().parentElement.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function setLastDone(){
+  const steps = stepLogEl().querySelectorAll('.step');
+  const last = steps[steps.length-1];
+  if(last){ last.classList.remove('running'); last.classList.add('done'); }
+}
+function setLastError(){
+  const steps = stepLogEl().querySelectorAll('.step');
+  const last = steps[steps.length-1];
+  if(last){ last.classList.remove('running'); last.classList.add('error'); }
+}
+
+async function runAgent(){
+  const paper = document.getElementById('paperInput').value.trim();
+  const duration = document.getElementById('durationInput').value || '15';
+  if(!paper){ showToast('请先粘贴论文/文稿内容'); return; }
+  if(!settings.proxy){ showToast('请先在 ⚙️ 设置里配置 AI 代理地址'); document.getElementById('settingsModal').classList.add('show'); return; }
+
+  const startBtn = document.getElementById('startBtn');
+  startBtn.disabled = true; startBtn.textContent = '🤖 Agent 工作中…';
+  document.getElementById('progressCard').style.display = 'block';
+  document.getElementById('outputCard').style.display = 'none';
+  stepLogEl().innerHTML = '';
+  document.getElementById('roundBadge').textContent = '';
+
+  try{
+    // ① 萃取
+    addStep('① 萃取 Agent：正在理解论文…', 'running');
+    const extraction = await callAI([{role:'user', content: promptExtract(paper)}]);
+    setLastDone();
+
+    // ② 逻辑重构（初稿）
+    addStep('② 逻辑重构 Agent：正在生成 ' + duration + ' 分钟答辩框架初稿…', 'running');
+    let draft = await callAI([{role:'user', content: promptRebuild(extraction, duration)}]);
+    setLastDone();
+
+    // ③④ 反思循环（最多3轮）
+    let rounds = 0;
+    for(let i=1; i<=3; i++){
+      rounds = i;
+      document.getElementById('roundBadge').textContent = '反思循环 ' + i + '/3';
+      addStep('③ 评审 Agent：第 ' + i + ' 轮自检（逻辑断层/缺项/字数/时长）…', 'running');
+      const reviewRaw = await callAI([{role:'user', content: promptReview(draft, duration)}]);
+      const review = parseReview(reviewRaw);
+      setLastDone();
+      if(review.是否达标){
+        addStep('✅ 第 ' + i + ' 轮自检通过，交付最终框架', 'done');
+        break;
+      }
+      const issueText = (review.问题列表 && review.问题列表.length) ? review.问题列表.map(x=>x.问题).join('；') : '存在问题';
+      addStep('⚠️ 发现 ' + review.问题数 + ' 个问题（' + issueText + '），④ 重新生成…', 'warn');
+      draft = await callAI([{role:'user', content: promptRevise(draft, reviewRaw, duration)}]);
+      setLastDone();
+      if(i === 3){
+        addStep('⏹ 已达最大循环轮数，交付当前版本', 'warn');
+      }
+    }
+
+    // 输出
+    document.getElementById('roundBadge').textContent = '共 ' + rounds + ' 轮';
+    document.getElementById('outContent').textContent = draft;
+    document.getElementById('outputCard').style.display = 'block';
+    showToast('✅ 生成完成');
+  }catch(e){
+    setLastError();
+    addStep('❌ 出错：' + e.message, 'error');
+  }
+  startBtn.disabled = false; startBtn.textContent = '🚀 开始生成';
+}
+
+/* ================= 设置 ================= */
+function fillSettings(){
+  document.getElementById('s-proxy').value = settings.proxy||'';
+  document.getElementById('s-model').value = settings.model||'glm-4-flash';
+}
+document.getElementById('saveSettingsBtn').onclick = function(){
+  settings.proxy = normalizeProxy(document.getElementById('s-proxy').value);
+  settings.model = document.getElementById('s-model').value.trim() || 'glm-4-flash';
+  save(LS.settings, settings);
+  document.getElementById('settingsMsg').innerHTML = '<div class="ok-text">✅ 已保存</div>';
+};
+document.getElementById('testProxyBtn').onclick = async function(){
+  const btn = this; btn.disabled = true; btn.textContent = '测试中…';
+  document.getElementById('settingsMsg').innerHTML = '';
+  try{
+    const target = normalizeProxy(settings.proxy || document.getElementById('s-proxy').value);
+    const r = await fetch(target, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({messages:[{role:'user',content:'请只回复：连接成功'}], model:'glm-4-flash'}) });
+    const d = await r.json();
+    document.getElementById('settingsMsg').innerHTML = (d.choices && d.choices[0])
+      ? '<div class="ok-text">✅ 连接成功</div>' : '<div class="warn-text">⚠️ 返回异常：' + esc(JSON.stringify(d).slice(0,120)) + '</div>';
+  }catch(e){
+    document.getElementById('settingsMsg').innerHTML = '<div class="warn-text">❌ 连接失败：' + esc(e.message) + '</div>';
+  }
+  btn.disabled = false; btn.textContent = '测试连接';
+};
+
+/* ================= 事件绑定 ================= */
+document.getElementById('startBtn').onclick = runAgent;
+document.getElementById('regenerateBtn').onclick = runAgent;
+document.getElementById('copyBtn').onclick = function(){
+  const t = document.getElementById('outContent').textContent;
+  if(navigator.clipboard){ navigator.clipboard.writeText(t).then(()=>showToast('📋 已复制')); }
+  else showToast('复制失败，请长按选择复制');
+};
+document.getElementById('settingsBtn').onclick = ()=>{ fillSettings(); document.getElementById('settingsModal').classList.add('show'); };
+document.getElementById('manualBtn').onclick = ()=>{ document.getElementById('manualModal').classList.add('show'); };
+document.querySelectorAll('[data-close]').forEach(b=>{
+  b.onclick = ()=>{ document.getElementById(b.dataset.close).classList.remove('show'); };
+});
+document.querySelectorAll('.modal-mask').forEach(m=>{
+  m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('show'); });
+});
+
+/* ================= 初始化 ================= */
+fillSettings();
+</script>
+</body>
+</html>

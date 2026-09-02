@@ -64,6 +64,7 @@
 
 <header>
   <div class="logo">📊 汇报架构 Agent<small>不做排版，只做汇报顶层逻辑</small></div>
+  <button class="icon-btn" id="profileBtn">👤 偏好</button>
   <button class="icon-btn" id="manualBtn">📖 使用说明</button>
   <button class="icon-btn" id="settingsBtn">⚙️ 设置</button>
 </header>
@@ -89,7 +90,23 @@
 
   <div class="card" id="progressCard" style="display:none">
     <h3>🤖 Agent 工作过程 <span class="tag" id="roundBadge"></span></h3>
+    <div id="planBox" class="kb-preview" style="display:none; margin-bottom:10px;"></div>
     <div id="stepLog"></div>
+    <div id="clarifyBox" style="display:none; margin-top:12px; padding:12px; background:#f5ead9; border-radius:10px;">
+      <b>💬 Agent 想先问你：</b>
+      <div id="clarifyQs" style="margin:8px 0; line-height:1.8; font-size:13px;"></div>
+      <textarea id="clarifyInput" rows="2" placeholder="在这里回答 Agent 的问题…"></textarea>
+      <button class="btn ghost" id="clarifyBtn" style="margin-top:6px;">回答并继续</button>
+    </div>
+    <div id="feedbackBox" style="display:none; margin-top:12px; padding:12px; background:#f5ead9; border-radius:10px;">
+      <b>📋 框架已生成，满意吗？</b>
+      <div class="muted" style="margin:6px 0;">不满意的话告诉 Agent 要调整什么</div>
+      <textarea id="feedbackInput" rows="2" placeholder="例如：创新点再突出一点 / 数据页放在前面"></textarea>
+      <div style="margin-top:6px;">
+        <button class="btn ghost" id="feedbackBtn">按意见调整</button>
+        <button class="btn ghost" id="feedbackSkipBtn" style="margin-left:8px;">满意，就这样</button>
+      </div>
+    </div>
   </div>
 
   <div class="card" id="outputCard" style="display:none">
@@ -101,6 +118,29 @@
     </div>
   </div>
 </main>
+
+<!-- 用户偏好弹窗（Agent 的 Memory） -->
+<div class="modal-mask" id="profileModal">
+  <div class="modal">
+    <button class="close" data-close="profileModal">✕</button>
+    <h3>👤 让 Agent 记住你的偏好</h3>
+    <div class="muted" style="margin-bottom:10px;">填一次，Agent 每次生成都会记住你的情况和偏好（数据存在本地浏览器）。</div>
+    <label>专业 / 研究方向</label>
+    <input id="p-major" placeholder="如：森林经理学">
+    <label>导师 / 听众最看重什么？</label>
+    <select id="p-pref">
+      <option value="方法">重方法严谨</option>
+      <option value="数据">重数据证据</option>
+      <option value="创新">重创新点</option>
+      <option value="应用">重落地应用</option>
+      <option value="综合" selected>综合均衡</option>
+    </select>
+    <label>常用汇报时长（分钟）</label>
+    <input type="number" id="p-duration" value="20" min="3" max="60">
+    <div style="margin-top:14px;"><button class="btn block" id="saveProfileBtn">✅ 保存偏好</button></div>
+    <button class="btn ghost block" id="skipProfileBtn" style="margin-top:8px;">先跳过</button>
+  </div>
+</div>
 
 <!-- 设置弹窗 -->
 <div class="modal-mask" id="settingsModal">
@@ -136,7 +176,8 @@
       ③ 评审：自己检查缺背景/缺数据/字数超标/时长不符<br>
       ④ 重生成：按评审意见修改，循环直到达标（最多 3 轮）<br><br>
       <b>第一次使用</b><br>
-      点右上角 ⚙️ 设置 → 填 Cloudflare Worker 地址（和研途同一个 Worker 就行）→ 保存 → 测试连接
+      1. 首次打开会弹出「👤 偏好」——填你的专业和听众偏好，Agent 会一直记住（Memory）<br>
+      2. 点右上角 ⚙️ 设置 → 填 Cloudflare Worker 地址 → 保存 → 测试连接
     </div>
   </div>
 </div>
@@ -176,6 +217,31 @@ async function callAI(messages){
   return content;
 }
 
+/* ================= 用户偏好记忆（Memory） ================= */
+let profile = load('na_profile', {});
+function fillProfileForm(){
+  document.getElementById('p-major').value = profile.major||'';
+  document.getElementById('p-pref').value = profile.pref||'综合';
+  document.getElementById('p-duration').value = profile.duration||'20';
+}
+function saveProfile(){
+  profile = {
+    major: document.getElementById('p-major').value.trim(),
+    pref: document.getElementById('p-pref').value,
+    duration: document.getElementById('p-duration').value
+  };
+  save('na_profile', profile);
+  document.getElementById('profileModal').classList.remove('show');
+  showToast('✅ 已保存，Agent 会记住你的偏好');
+}
+function profileContext(){
+  let s = '';
+  if(profile.major) s += '用户专业=' + profile.major + '；';
+  if(profile.pref && profile.pref!=='综合') s += '听众看重「' + (profile.pref==='方法'?'方法严谨':profile.pref==='数据'?'数据证据':profile.pref==='创新'?'创新点':'落地应用') + '」；';
+  if(profile.duration) s += '常用时长=' + profile.duration + ' 分钟；';
+  return s ? '【用户记忆】' + s + '\n' : '';
+}
+
 /* ================= 技能包定义 ================= */
 const SKILLS = {
   defense: {
@@ -210,10 +276,12 @@ function promptExtract(paper){
     '创新点若原文未明确写出，必须写"论文未明确提及创新点"，禁止自己补。\n'+
     '输出：用 Markdown 分点输出 6 项。\n\n【论文内容】\n' + paper;
 }
-function promptRebuild(extraction, duration, skillId){
+function promptRebuild(extraction, duration, skillId, emphasis){
   const s = getSkill(skillId);
   const dur = duration + ' 分钟';
   return '你是汇报架构师，擅长把"写作逻辑"重构成"听众爱听的汇报逻辑"。\n'+
+    profileContext()+
+    (emphasis ? '【汇报侧重】本次汇报突出「' + emphasis + '」，结构安排和内容分配要向它倾斜。\n' : '')+
     '听众建模：' + s.audience + '\n'+
     '任务：基于萃取结果，生成 '+dur+' 的汇报 PPT 框架，' + s.structure + '\n'+
     s.outputTemplate.replace('{dur}', duration) + '\n'+
@@ -287,6 +355,46 @@ function setLastError(){
   if(last){ last.classList.remove('running'); last.classList.add('error'); }
 }
 
+/* ================= 规划 Agent（自主思考） ================= */
+function promptPlanner(paper, duration){
+  return '你是汇报任务规划 Agent。你要先"思考"再行动：分析用户提供的论文内容，判断：\n'+
+    profileContext()+
+    '1. 这篇论文的特点：方法是否清晰？数据是否充分？创新点是否明确？结论是否扎实？\n'+
+    '2. 汇报应该侧重什么：方法 / 数据 / 创新点 / 结论 / 应用？（结合论文实际判断）\n'+
+    '3. 是否需要先向用户澄清问题？例如：听众最看重什么、有没有特别要强调的。\n'+
+    '输出严格 JSON（不要任何其他文字）：\n'+
+    '{"需要澄清": ["问题1","问题2"], "侧重": "数据", "步骤": ["萃取","重构","评审"], "理由": "一句话说明你的规划依据"}\n'+
+    '- 不需要澄清时，需要澄清填 []\n- 步骤可以按需增删（例如论文很短可去掉萃取，直接用原文重构）\n\n【论文内容】\n'+paper;
+}
+function parsePlan(raw){
+  let s = String(raw).trim();
+  s = s.replace(/```json/gi,'').replace(/```/g,'');
+  const start = s.indexOf('{'), end = s.lastIndexOf('}');
+  if(start>=0 && end>start){
+    try{
+      const obj = JSON.parse(s.slice(start,end+1));
+      return { 需要澄清: obj.需要澄清||[], 侧重: obj.侧重||'综合', 步骤: obj.步骤||['萃取','重构','评审'], 理由: obj.理由||'' };
+    }catch(e){}
+  }
+  return { 需要澄清: [], 侧重: '综合', 步骤: ['萃取','重构','评审'], 理由: '' };
+}
+/* 问用户（Promise，等用户回答后继续） */
+function askClarify(questions){
+  return new Promise(function(resolve){
+    document.getElementById('clarifyQs').innerHTML = questions.map(function(q,i){ return '<div>Q'+(i+1)+'. '+esc(q)+'</div>'; }).join('');
+    document.getElementById('clarifyBox').style.display = 'block';
+    document.getElementById('clarifyInput').value = '';
+    window.__clarifyResolve = resolve;
+  });
+}
+function askFeedback(){
+  return new Promise(function(resolve){
+    document.getElementById('feedbackBox').style.display = 'block';
+    document.getElementById('feedbackInput').value = '';
+    window.__feedbackResolve = resolve;
+  });
+}
+
 async function runAgent(){
   const paper = document.getElementById('paperInput').value.trim();
   const duration = document.getElementById('durationInput').value || '15';
@@ -302,31 +410,55 @@ async function runAgent(){
   document.getElementById('roundBadge').textContent = '';
 
   try{
-    // ① 萃取
-    addStep('① 萃取 Agent：正在理解论文…', 'running');
-    const extraction = await callAI([{role:'user', content: promptExtract(paper)}]);
+    // ① 规划 Agent：先思考，再定计划
+    document.getElementById('planBox').style.display = 'none';
+    document.getElementById('clarifyBox').style.display = 'none';
+    document.getElementById('feedbackBox').style.display = 'none';
+    addStep('🤔 规划 Agent：正在分析论文特点、思考执行计划…', 'running');
+    const planRaw = await callAI([{role:'user', content: promptPlanner(paper, duration)}]);
+    const plan = parsePlan(planRaw);
+    setLastDone();
+    const planBox = document.getElementById('planBox');
+    planBox.style.display = 'block';
+    planBox.textContent = '🗺️ 执行计划：侧重「' + plan.侧重 + '」' + (plan.理由 ? '\n理由：' + plan.理由 : '') + '\n步骤：' + (plan.步骤||[]).join(' → ');
+    addStep('🧠 规划完成：侧重「' + plan.侧重 + '」，步骤 ' + (plan.步骤||[]).join(' → '), 'done');
+
+    // ② 澄清：Agent 主动问用户（如有）
+    if(plan.需要澄清 && plan.需要澄清.length){
+      addStep('💬 Agent 认为需要先向你澄清问题…', 'running');
+      const answers = await askClarify(plan.需要澄清);
+      setLastDone();
+      addStep('✅ 已收到你的回答' + (answers ? '（' + answers.slice(0,40) + '…）' : '（跳过）'), 'done');
+    }
+
+    // ③ 萃取（按计划，论文很短可跳过）
+    let extraction = paper;
+    if((plan.步骤||[]).indexOf('萃取') >= 0){
+      addStep('📄 萃取 Agent：正在理解论文…', 'running');
+      extraction = await callAI([{role:'user', content: promptExtract(paper)}]);
+      setLastDone();
+    }
+
+    // ④ 重构（按规划的侧重）
+    addStep('🏗️ 逻辑重构 Agent（侧重：' + plan.侧重 + '）：正在生成 ' + duration + ' 分钟框架…', 'running');
+    let draft = await callAI([{role:'user', content: promptRebuild(extraction, duration, skill, plan.侧重)}]);
     setLastDone();
 
-    // ② 逻辑重构（初稿）
-    addStep('② 逻辑重构 Agent：正在生成 ' + duration + ' 分钟答辩框架初稿…', 'running');
-    let draft = await callAI([{role:'user', content: promptRebuild(extraction, duration, skill)}]);
-    setLastDone();
-
-    // ③④ 反思循环（最多3轮）
+    // ⑤ 反思循环（最多3轮，Agent 决定重生成）
     let rounds = 0;
     for(let i=1; i<=3; i++){
       rounds = i;
       document.getElementById('roundBadge').textContent = '反思循环 ' + i + '/3';
-      addStep('③ 评审 Agent：第 ' + i + ' 轮自检（逻辑断层/缺项/字数/时长）…', 'running');
+      addStep('🔍 评审 Agent：第 ' + i + ' 轮自检（逻辑断层/缺项/字数/时长/编造）…', 'running');
       const reviewRaw = await callAI([{role:'user', content: promptReview(draft, duration, skill)}]);
       const review = parseReview(reviewRaw);
       setLastDone();
       if(review.是否达标){
-        addStep('✅ 第 ' + i + ' 轮自检通过，交付最终框架', 'done');
+        addStep('✅ 第 ' + i + ' 轮自检通过', 'done');
         break;
       }
       const issueText = (review.问题列表 && review.问题列表.length) ? review.问题列表.map(x=>x.问题).join('；') : '存在问题';
-      addStep('⚠️ 发现 ' + review.问题数 + ' 个问题（' + issueText + '），④ 重新生成…', 'warn');
+      addStep('⚠️ 发现 ' + review.问题数 + ' 个问题，Agent 决定重新生成…', 'warn');
       draft = await callAI([{role:'user', content: promptRevise(draft, reviewRaw, duration, skill)}]);
       setLastDone();
       if(i === 3){
@@ -334,10 +466,21 @@ async function runAgent(){
       }
     }
 
-    // 输出
+    // ⑥ 交付 + 主动问反馈
+    showOutput(draft);
+    addStep('💬 Agent 交付框架，询问你的意见…', 'running');
+    const feedback = await askFeedback();
+    setLastDone();
+    if(feedback && feedback.trim()){
+      addStep('✏️ 按你的意见调整中…', 'running');
+      draft = await callAI([{role:'user', content: promptRevise(draft, '用户反馈：' + feedback, duration, skill)}]);
+      setLastDone();
+      showOutput(draft);
+      addStep('✅ 已按你的意见更新', 'done');
+    } else {
+      addStep('✅ 用户满意，交付完成', 'done');
+    }
     document.getElementById('roundBadge').textContent = '共 ' + rounds + ' 轮';
-    document.getElementById('outContent').textContent = draft;
-    document.getElementById('outputCard').style.display = 'block';
     showToast('✅ 生成完成');
   }catch(e){
     setLastError();
@@ -418,12 +561,29 @@ async function parseDocx(file){
 
 /* ================= 事件绑定 ================= */
 document.getElementById('startBtn').onclick = runAgent;
+document.getElementById('clarifyBtn').onclick = function(){
+  const v = document.getElementById('clarifyInput').value.trim();
+  document.getElementById('clarifyBox').style.display = 'none';
+  if(window.__clarifyResolve){ window.__clarifyResolve(v); window.__clarifyResolve = null; }
+};
+document.getElementById('feedbackBtn').onclick = function(){
+  const v = document.getElementById('feedbackInput').value.trim();
+  document.getElementById('feedbackBox').style.display = 'none';
+  if(window.__feedbackResolve){ window.__feedbackResolve(v); window.__feedbackResolve = null; }
+};
+document.getElementById('feedbackSkipBtn').onclick = function(){
+  document.getElementById('feedbackBox').style.display = 'none';
+  if(window.__feedbackResolve){ window.__feedbackResolve(''); window.__feedbackResolve = null; }
+};
 document.getElementById('regenerateBtn').onclick = runAgent;
 document.getElementById('copyBtn').onclick = function(){
   const t = document.getElementById('outContent').textContent;
   if(navigator.clipboard){ navigator.clipboard.writeText(t).then(()=>showToast('📋 已复制')); }
   else showToast('复制失败，请长按选择复制');
 };
+document.getElementById('profileBtn').onclick = ()=>{ fillProfileForm(); document.getElementById('profileModal').classList.add('show'); };
+document.getElementById('saveProfileBtn').onclick = saveProfile;
+document.getElementById('skipProfileBtn').onclick = function(){ document.getElementById('profileModal').classList.remove('show'); };
 document.getElementById('settingsBtn').onclick = ()=>{ fillSettings(); document.getElementById('settingsModal').classList.add('show'); };
 document.getElementById('manualBtn').onclick = ()=>{ document.getElementById('manualModal').classList.add('show'); };
 document.querySelectorAll('[data-close]').forEach(b=>{
@@ -435,6 +595,11 @@ document.querySelectorAll('.modal-mask').forEach(m=>{
 
 /* ================= 初始化 ================= */
 fillSettings();
+fillProfileForm();
+// 首次使用：弹出偏好收集（Memory 冷启动）
+if(!profile.major && !profile.pref){
+  document.getElementById('profileModal').classList.add('show');
+}
 </script>
 </body>
 </html>

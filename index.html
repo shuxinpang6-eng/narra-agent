@@ -395,6 +395,12 @@ function askFeedback(){
   });
 }
 
+/* 显示最终框架 */
+function showOutput(text){
+  document.getElementById('outContent').textContent = text;
+  document.getElementById('outputCard').style.display = 'block';
+}
+
 async function runAgent(){
   const paper = document.getElementById('paperInput').value.trim();
   const duration = document.getElementById('durationInput').value || '15';
